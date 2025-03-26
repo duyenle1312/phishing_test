@@ -1,4 +1,7 @@
 import { supabase } from '@/utils/anonClient';
+
+export const dynamic = 'force-dynamic';
+
 export default async function Instruments() {
   const { data: user_activities } = await supabase.from("phishing_test").select();
   return <pre>{JSON.stringify(user_activities, null, 2)}</pre>
