@@ -1,88 +1,86 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
 import { supabase } from "../../utils/anonClient";
 import CyberSecurityInfo from "@/components/cyber";
 
+/**
+ * Records a click for a given (template_id, email) pair.
+ * If the pair already exists, increment its click count; otherwise insert it.
+ * Failures are logged but never surfaced to the recipient — the educational
+ * page should always render regardless of what the database does.
+ */
+async function recordClick(template_id: number, email: string) {
+  const { data, error } = await supabase
+    .from("phishing_test")
+    .select("id, number_of_click")
+    .eq("template_id", template_id)
+    .eq("email", email)
+    .maybeSingle();
 
-async function addUser(template_id: number, email: string) {
-  if (!template_id || !email) {
-    console.log("Both template_id and email are required.");
-  } else {
-    // Step 1: Check if the pair (template_id, email) exists
-    const { data, error } = await supabase
+  if (error) {
+    console.error("Error fetching click record:", error.message);
+    return;
+  }
+
+  if (data) {
+    const { error: updateError } = await supabase
       .from("phishing_test")
-      .select("id, number_of_click")
-      .eq("template_id", template_id)
-      .eq("email", email)
-      .single();
+      .update({
+        number_of_click: data.number_of_click + 1,
+        latest_timestamp: new Date().toISOString(),
+      })
+      .eq("id", data.id);
 
-    if (error && error.code !== "PGRST116") {
-      // Ignore "PGRST116" (no rows found)
-      console.log("Error fetching data:", error.message);
-      return { success: false, message: "Database error." };
+    if (updateError) {
+      console.error("Error updating click record:", updateError.message);
     }
+    return;
+  }
 
-    if (data) {
-      // Step 2: If found, update the record
-      console.log(data);
-      const { error } = await supabase
-        .from("phishing_test")
-        .update({
-          number_of_click: data.number_of_click + 1,
-          latest_timestamp: new Date(), // Update timestamp
-        })
-        .eq("id", data.id);
+  const { error: insertError } = await supabase.from("phishing_test").insert([
+    {
+      template_id,
+      email,
+      number_of_click: 1,
+      latest_timestamp: new Date().toISOString(),
+    },
+  ]);
 
-      if (error) {
-        console.log("Error updating record:", error.message);
-        return { success: false, message: "Error updating record." };
-      }
-
-      console.log("Click count updated.");
-      return { success: true, message: "Click count updated." };
-    } else {
-      // Step 3: If not found, insert a new row
-      const { error: insertError } = await supabase
-        .from("phishing_test")
-        .insert([{ template_id, email, number_of_click: 1 }]);
-
-      if (insertError) {
-        console.log("Error inserting record:", insertError.message);
-        return { success: false, message: "Error inserting record." };
-      }
-
-      console.log("New user click tracked.");
-      return { success: true, message: "New user click tracked." };
-    }
+  if (insertError) {
+    console.error("Error inserting click record:", insertError.message);
   }
 }
 
-
-export default function Landing() {
+function ClickTracker() {
   const searchParams = useSearchParams();
-
-  const template_id = searchParams.get("template_id") || "";
-  const email = searchParams.get("email") || "";
+  const hasTracked = useRef(false);
 
   useEffect(() => {
-    if (template_id && email) {
-      console.log(template_id, email);
-      addUser(parseInt(template_id), email);
-    }
-  }, []); // Runs when the URL parameters change
+    // Guard against React StrictMode firing the effect twice in development,
+    // which would double-count a single click.
+    if (hasTracked.current) return;
 
+    const template_id = Number(searchParams.get("template_id"));
+    const email = searchParams.get("email")?.trim() ?? "";
+
+    if (Number.isInteger(template_id) && template_id > 0 && email) {
+      hasTracked.current = true;
+      recordClick(template_id, email);
+    }
+  }, [searchParams]);
+
+  return null;
+}
+
+export default function Landing() {
   return (
-    <div>
+    <div className="w-full">
+      <Suspense fallback={null}>
+        <ClickTracker />
+      </Suspense>
       <CyberSecurityInfo />
     </div>
   );
 }
-
-// export default function HomePage() {
-//   <Suspense fallback={<div className="text-black">Loading...</div>}>
-//     <Landing />
-//   </Suspense>;
-// }

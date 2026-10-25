@@ -52,7 +52,7 @@ export default function RootLayout({
                 </div>
               </nav> */}
             <Suspense fallback={<div className="text-black">Loading...</div>}>
-              <div className="flex flex-col gap-20 max-w-5xl p-5">
+              <div className="w-full">
                 {children}
               </div>
             </Suspense>
